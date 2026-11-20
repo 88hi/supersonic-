@@ -3,7 +3,7 @@
 package windows
 
 /*
-#cgo LDFLAGS: -lole32
+#cgo LDFLAGS: -lole32 -lgdi32
 #include <stdlib.h>
 #include "taskbar_buttons.h"
 
