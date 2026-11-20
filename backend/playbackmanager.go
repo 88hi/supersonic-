@@ -18,6 +18,7 @@ import (
 	"github.com/supersonic-app/supersonic/backend/player"
 	"github.com/supersonic-app/supersonic/backend/player/dlna"
 	"github.com/supersonic-app/supersonic/backend/player/mpv"
+	"github.com/supersonic-app/supersonic/backend/windows"
 	"github.com/supersonic-app/supersonic/sharedutil"
 )
 
@@ -59,10 +60,13 @@ type PlaybackManager struct {
 	radioIcyTitle    string
 	radioIcyArtist   string
 
-	// mute tracking for shortcuts and remote control
-	muteMu        sync.Mutex
-	muted         bool
-	preMuteVolume int
+	// mute tracking & Windows system master volume sync
+	muteMu           sync.Mutex
+	muted            bool
+	preMuteVolume    int
+	syncSystemVolume bool
+	sysVolume        int
+	sysVolCancel     context.CancelFunc
 }
 
 type RemotePlaybackDevice struct {
@@ -713,8 +717,99 @@ func (p *PlaybackManager) PlaybackStatus() PlaybackStatus {
 	return p.engine.PlaybackStatus()
 }
 
+func (p *PlaybackManager) isUsingSystemVolume() bool {
+	p.muteMu.Lock()
+	sync := p.syncSystemVolume
+	p.muteMu.Unlock()
+	return sync && p.currentRemotePlayer == nil && windows.SystemVolumeSupported()
+}
+
+func (p *PlaybackManager) notifyVolumeChange(vol int) {
+	for _, cb := range p.engine.onVolumeChange {
+		cb(vol)
+	}
+}
+
+// SetSyncSystemVolume enables or disables bidirectional sync between Supersonic's
+// local playback volume and the OS master volume (Windows).
+func (p *PlaybackManager) SetSyncSystemVolume(parentCtx context.Context, enabled bool) {
+	p.muteMu.Lock()
+	if p.sysVolCancel != nil {
+		p.sysVolCancel()
+		p.sysVolCancel = nil
+	}
+	if !enabled || !windows.SystemVolumeSupported() {
+		wasSync := p.syncSystemVolume
+		curVol := p.sysVolume
+		p.syncSystemVolume = false
+		p.muteMu.Unlock()
+		if wasSync && p.currentRemotePlayer == nil {
+			p.cmdQueue.SetVolume(clamp(curVol, 0, 100))
+		}
+		return
+	}
+
+	p.syncSystemVolume = true
+	watchCtx, cancel := context.WithCancel(parentCtx)
+	p.sysVolCancel = cancel
+	p.muteMu.Unlock()
+
+	// Keep local MPV player at 100% unity gain so OS master volume controls the actual level
+	// without double attenuation.
+	if p.localPlayer != nil {
+		_ = p.localPlayer.SetVolume(100)
+	}
+
+	if v, m, err := windows.GetSystemVolume(); err == nil {
+		p.muteMu.Lock()
+		p.sysVolume = v
+		p.muted = m
+		p.muteMu.Unlock()
+		if p.currentRemotePlayer == nil {
+			if m {
+				p.notifyVolumeChange(0)
+			} else {
+				p.notifyVolumeChange(v)
+			}
+		}
+	}
+
+	windows.StartSystemVolumeWatcher(watchCtx, func(vol int, muted bool) {
+		p.muteMu.Lock()
+		p.sysVolume = vol
+		p.muted = muted
+		syncActive := p.syncSystemVolume
+		p.muteMu.Unlock()
+		if syncActive && p.currentRemotePlayer == nil {
+			if muted {
+				p.notifyVolumeChange(0)
+			} else {
+				p.notifyVolumeChange(vol)
+			}
+		}
+	})
+}
+
 func (p *PlaybackManager) SetVolume(vol int) {
 	vol = clamp(vol, 0, 100)
+	if p.isUsingSystemVolume() {
+		p.muteMu.Lock()
+		p.sysVolume = vol
+		if vol > 0 {
+			p.muted = false
+			p.preMuteVolume = vol
+		}
+		p.muteMu.Unlock()
+		if err := windows.SetSystemVolume(vol); err != nil {
+			log.Printf("error setting system volume: %v", err)
+		}
+		if p.localPlayer != nil && p.localPlayer.GetVolume() != 100 {
+			_ = p.localPlayer.SetVolume(100)
+		}
+		p.notifyVolumeChange(vol)
+		return
+	}
+
 	p.muteMu.Lock()
 	if vol > 0 {
 		p.muted = false
@@ -725,19 +820,45 @@ func (p *PlaybackManager) SetVolume(vol int) {
 }
 
 func (p *PlaybackManager) AdjustVolume(delta int) {
+	if p.isUsingSystemVolume() {
+		p.muteMu.Lock()
+		base := p.sysVolume
+		p.muteMu.Unlock()
+		p.SetVolume(base + delta)
+		return
+	}
 	p.SetVolume(p.Volume() + delta)
 }
 
 func (p *PlaybackManager) IsMuted() bool {
 	p.muteMu.Lock()
 	defer p.muteMu.Unlock()
-	return p.muted || p.Volume() == 0
+	if p.syncSystemVolume && p.currentRemotePlayer == nil && windows.SystemVolumeSupported() {
+		return p.muted || p.sysVolume == 0
+	}
+	return p.muted || p.engine.CurrentPlayer().GetVolume() == 0
 }
 
 func (p *PlaybackManager) SetMuted(muted bool) {
+	if p.isUsingSystemVolume() {
+		if err := windows.SetSystemMute(muted); err != nil {
+			log.Printf("error setting system mute: %v", err)
+		}
+		p.muteMu.Lock()
+		p.muted = muted
+		curVol := p.sysVolume
+		p.muteMu.Unlock()
+		if muted {
+			p.notifyVolumeChange(0)
+		} else {
+			p.notifyVolumeChange(curVol)
+		}
+		return
+	}
+
 	p.muteMu.Lock()
 	if muted {
-		cur := p.Volume()
+		cur := p.engine.CurrentPlayer().GetVolume()
 		if cur > 0 {
 			p.preMuteVolume = cur
 		}
@@ -772,6 +893,14 @@ func (p *PlaybackManager) SetShuffle(shuffle bool) {
 }
 
 func (p *PlaybackManager) Volume() int {
+	if p.isUsingSystemVolume() {
+		p.muteMu.Lock()
+		defer p.muteMu.Unlock()
+		if p.muted {
+			return 0
+		}
+		return p.sysVolume
+	}
 	return p.engine.CurrentPlayer().GetVolume()
 }
 

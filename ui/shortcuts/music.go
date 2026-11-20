@@ -6,6 +6,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/driver/desktop"
 	"github.com/supersonic-app/supersonic/backend"
+	"github.com/supersonic-app/supersonic/backend/windows"
 )
 
 type MusicActionID string
@@ -324,4 +325,133 @@ func FormatShortcut(key fyne.KeyName, mod fyne.KeyModifier) string {
 	}
 	parts = append(parts, keyDisp)
 	return strings.Join(parts, "+")
+}
+
+func isFunctionKey(key fyne.KeyName) bool {
+	switch key {
+	case fyne.KeyF1, fyne.KeyF2, fyne.KeyF3, fyne.KeyF4,
+		fyne.KeyF5, fyne.KeyF6, fyne.KeyF7, fyne.KeyF8,
+		fyne.KeyF9, fyne.KeyF10, fyne.KeyF11, fyne.KeyF12:
+		return true
+	default:
+		return false
+	}
+}
+
+// ToWindowsHotkey converts a parsed Fyne key and modifier into Win32 RegisterHotKey
+// modifier flags and a virtual-key code. Bare non-function keys (without modifiers)
+// return ok=false so they do not hijack normal typing across other applications.
+func ToWindowsHotkey(key fyne.KeyName, mod fyne.KeyModifier) (winMod uint32, vk uint32, ok bool) {
+	if mod == 0 && !isFunctionKey(key) {
+		return 0, 0, false
+	}
+	vk, found := keyToWindowsVK(key)
+	if !found {
+		return 0, 0, false
+	}
+	if mod&fyne.KeyModifierAlt != 0 {
+		winMod |= windows.ModAlt
+	}
+	if mod&fyne.KeyModifierControl != 0 {
+		winMod |= windows.ModControl
+	}
+	if mod&fyne.KeyModifierShift != 0 {
+		winMod |= windows.ModShift
+	}
+	if mod&fyne.KeyModifierSuper != 0 {
+		winMod |= windows.ModWin
+	}
+	return winMod, vk, true
+}
+
+func keyToWindowsVK(key fyne.KeyName) (uint32, bool) {
+	if len(key) == 1 {
+		c := key[0]
+		if c >= 'A' && c <= 'Z' {
+			return uint32(c), true
+		}
+		if c >= '0' && c <= '9' {
+			return uint32(c), true
+		}
+	}
+	switch key {
+	case fyne.KeySpace:
+		return 0x20, true
+	case fyne.KeyReturn, fyne.KeyEnter:
+		return 0x0D, true
+	case fyne.KeyTab:
+		return 0x09, true
+	case fyne.KeyBackspace:
+		return 0x08, true
+	case fyne.KeyInsert:
+		return 0x2D, true
+	case fyne.KeyDelete:
+		return 0x2E, true
+	case fyne.KeyHome:
+		return 0x24, true
+	case fyne.KeyEnd:
+		return 0x23, true
+	case fyne.KeyPageUp:
+		return 0x21, true
+	case fyne.KeyPageDown:
+		return 0x22, true
+	case fyne.KeyLeft:
+		return 0x25, true
+	case fyne.KeyUp:
+		return 0x26, true
+	case fyne.KeyRight:
+		return 0x27, true
+	case fyne.KeyDown:
+		return 0x28, true
+	case fyne.KeyF1:
+		return 0x70, true
+	case fyne.KeyF2:
+		return 0x71, true
+	case fyne.KeyF3:
+		return 0x72, true
+	case fyne.KeyF4:
+		return 0x73, true
+	case fyne.KeyF5:
+		return 0x74, true
+	case fyne.KeyF6:
+		return 0x75, true
+	case fyne.KeyF7:
+		return 0x76, true
+	case fyne.KeyF8:
+		return 0x77, true
+	case fyne.KeyF9:
+		return 0x78, true
+	case fyne.KeyF10:
+		return 0x79, true
+	case fyne.KeyF11:
+		return 0x7A, true
+	case fyne.KeyF12:
+		return 0x7B, true
+	case fyne.KeyPlus, fyne.KeyEqual:
+		return 0xBB, true
+	case fyne.KeyMinus:
+		return 0xBD, true
+	case fyne.KeyComma:
+		return 0xBC, true
+	case fyne.KeyPeriod:
+		return 0xBE, true
+	case fyne.KeySlash:
+		return 0xBF, true
+	case fyne.KeySemicolon:
+		return 0xBA, true
+	case fyne.KeyApostrophe:
+		return 0xDE, true
+	case fyne.KeyLeftBracket:
+		return 0xDB, true
+	case fyne.KeyRightBracket:
+		return 0xDD, true
+	case fyne.KeyBackslash:
+		return 0xDC, true
+	case fyne.KeyBackTick:
+		return 0xC0, true
+	case fyne.KeyAsterisk:
+		return 0x6A, true
+	default:
+		return 0, false
+	}
 }

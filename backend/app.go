@@ -276,10 +276,21 @@ func StartupApp(appName, displayAppName, appVersion, appVersionTag, latestReleas
 		a.JellyfinRemote.Stop()
 	})
 
+	// Windows system master volume sync
+	a.PlaybackManager.SetSyncSystemVolume(a.bgrndCtx, a.Config.LocalPlayback.SyncSystemVolume)
+
 	a.startConfigWriter(a.bgrndCtx)
 
 	appInstance = a
 	return a, nil
+}
+
+// SetSyncSystemVolume enables or disables syncing player volume with the OS master volume.
+func (a *App) SetSyncSystemVolume(enabled bool) {
+	a.Config.LocalPlayback.SyncSystemVolume = enabled
+	if a.PlaybackManager != nil {
+		a.PlaybackManager.SetSyncSystemVolume(a.bgrndCtx, enabled)
+	}
 }
 
 // SetRemoteControlEnabled enables or disables remote control (Jellyfin Cast receiver) at runtime.
@@ -623,7 +634,9 @@ func (a *App) Shutdown() {
 	}
 	a.Config.Playback.RepeatMode = repeatMode
 	a.Config.Playback.Autoplay = a.PlaybackManager.IsAutoplay()
-	a.Config.LocalPlayback.Volume = a.LocalPlayer.GetVolume()
+	if !a.Config.LocalPlayback.SyncSystemVolume {
+		a.Config.LocalPlayback.Volume = a.LocalPlayer.GetVolume()
+	}
 	a.SavePlayQueueIfEnabled()
 	a.SaveConfigFile()
 

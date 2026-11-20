@@ -48,8 +48,28 @@ func TestDefaultMusicShortcutsValid(t *testing.T) {
 	cfg := backend.DefaultShortcutsConfig()
 	for _, action := range MusicShortcutActions {
 		spec := action.Get(&cfg)
-		if _, _, ok := ParseShortcut(spec); !ok {
+		k, m, ok := ParseShortcut(spec)
+		if !ok {
 			t.Errorf("default shortcut for %s (%q) failed to parse", action.ID, spec)
+			continue
 		}
+		if _, _, ok := ToWindowsHotkey(k, m); !ok {
+			t.Errorf("default shortcut for %s (%q) should be globally registerable on Windows", action.ID, spec)
+		}
+	}
+}
+
+func TestToWindowsHotkey(t *testing.T) {
+	if _, _, ok := ToWindowsHotkey(fyne.KeySpace, 0); ok {
+		t.Error("bare Space should not register as global Windows hotkey")
+	}
+	if _, _, ok := ToWindowsHotkey(fyne.KeyM, 0); ok {
+		t.Error("bare M should not register as global Windows hotkey")
+	}
+	if _, vk, ok := ToWindowsHotkey(fyne.KeyF8, 0); !ok || vk != 0x77 {
+		t.Errorf("F8 global hotkey = (vk=0x%x, ok=%v), want (0x77, true)", vk, ok)
+	}
+	if mod, vk, ok := ToWindowsHotkey(fyne.KeyRight, fyne.KeyModifierControl|fyne.KeyModifierAlt); !ok || mod == 0 || vk != 0x27 {
+		t.Errorf("Ctrl+Alt+Right = (mod=0x%x, vk=0x%x, ok=%v)", mod, vk, ok)
 	}
 }

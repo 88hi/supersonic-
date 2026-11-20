@@ -13,6 +13,7 @@ import (
 
 	"github.com/supersonic-app/supersonic/backend"
 	"github.com/supersonic-app/supersonic/backend/player/mpv"
+	"github.com/supersonic-app/supersonic/backend/windows"
 	"github.com/supersonic-app/supersonic/res"
 	"github.com/supersonic-app/supersonic/ui/shortcuts"
 	myTheme "github.com/supersonic-app/supersonic/ui/theme"
@@ -33,17 +34,18 @@ import (
 type SettingsDialog struct {
 	widget.BaseWidget
 
-	OnReplayGainSettingsChanged    func()
-	OnAudioExclusiveSettingChanged func()
-	OnPauseFadeSettingsChanged     func()
-	OnAudioDeviceSettingChanged    func()
-	OnThemeSettingChanged          func()
-	OnDismiss                      func()
-	OnEqualizerSettingsChanged     func()
-	OnPageNeedsRefresh             func()
-	OnClearCaches                  func()
-	OnRemoteControlSettingChanged  func()
-	OnShortcutsChanged             func()
+	OnReplayGainSettingsChanged      func()
+	OnAudioExclusiveSettingChanged   func()
+	OnPauseFadeSettingsChanged       func()
+	OnAudioDeviceSettingChanged      func()
+	OnThemeSettingChanged            func()
+	OnDismiss                        func()
+	OnEqualizerSettingsChanged       func()
+	OnPageNeedsRefresh               func()
+	OnClearCaches                    func()
+	OnRemoteControlSettingChanged    func()
+	OnSyncSystemVolumeSettingChanged func()
+	OnShortcutsChanged               func()
 
 	config          *backend.Config
 	audioDevices    []mpv.AudioDevice
@@ -465,6 +467,17 @@ func (s *SettingsDialog) createPlaybackTab(isLocalPlayer, isReplayGainPlayer boo
 	})
 	remoteControl.Checked = s.config.Application.EnableRemoteControl
 
+	syncSystemVolume := widget.NewCheck(lang.L("Sync volume with system volume"), func(b bool) {
+		s.config.LocalPlayback.SyncSystemVolume = b
+		if s.OnSyncSystemVolumeSettingChanged != nil {
+			s.OnSyncSystemVolumeSettingChanged()
+		}
+	})
+	syncSystemVolume.Checked = s.config.LocalPlayback.SyncSystemVolume
+	if !windows.SystemVolumeSupported() {
+		syncSystemVolume.Hide()
+	}
+
 	return container.NewTabItem(lang.L("Playback"), container.NewVBox(
 
 		container.New(&layout.CustomPaddedLayout{TopPadding: 5},
@@ -473,6 +486,7 @@ func (s *SettingsDialog) createPlaybackTab(isLocalPlayer, isReplayGainPlayer boo
 				layout.NewSpacer(), audioExclusive,
 			)),
 		pauseFade,
+		syncSystemVolume,
 		remoteControl,
 		s.newSectionSeparator(),
 		disableTranscode,
@@ -852,8 +866,20 @@ func (s *SettingsDialog) createShortcutsTab() *container.TabItem {
 		rows.Add(row)
 	}
 
+	var globalCheck *widget.Check
+	if windows.GlobalHotkeysSupported() {
+		globalCheck = widget.NewCheck(lang.L("Enable global shortcuts (work in background)"), func(b bool) {
+			s.config.Shortcuts.EnableGlobalShortcuts = b
+			notifyChanged()
+		})
+		globalCheck.Checked = s.config.Shortcuts.EnableGlobalShortcuts
+	}
+
 	resetAllBtn := widget.NewButton(lang.L("Reset all to defaults"), func() {
 		s.config.Shortcuts = backend.DefaultShortcutsConfig()
+		if globalCheck != nil {
+			globalCheck.SetChecked(s.config.Shortcuts.EnableGlobalShortcuts)
+		}
 		for i, action := range shortcuts.MusicShortcutActions {
 			recorders[i].SetValue(action.Get(&s.config.Shortcuts))
 		}
@@ -863,11 +889,17 @@ func (s *SettingsDialog) createShortcutsTab() *container.TabItem {
 	hint := widget.NewLabel(lang.L("Click a shortcut button and press the desired key combination (Esc to cancel)."))
 	hint.Wrapping = fyne.TextWrapWord
 
+	topBox := container.NewVBox()
+	if globalCheck != nil {
+		topBox.Add(globalCheck)
+	}
+	topBox.Add(hint)
+
 	scroll := container.NewVScroll(container.NewPadded(rows))
 	scroll.SetMinSize(fyne.NewSize(460, 320))
 
 	content := container.NewBorder(
-		hint,
+		topBox,
 		container.NewHBox(layout.NewSpacer(), resetAllBtn),
 		nil, nil,
 		scroll,

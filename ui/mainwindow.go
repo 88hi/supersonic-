@@ -54,6 +54,8 @@ type MainWindow struct {
 
 	registeredMusicShortcuts []fyne.Shortcut
 	singleKeyMusicActions    map[fyne.KeyName]func()
+	globalHotkeys            *windows.GlobalHotkeyManager
+	globalHotkeysPaused      bool
 
 	isScreensaverDisabled bool
 }
@@ -96,7 +98,18 @@ func NewMainWindow(fyneApp fyne.App, appName, displayAppName, appVersion string,
 	}
 	m.Controller.SelectAllPageFunc = m.BrowsingPane.SelectAll
 	m.Controller.UnselectAllPageFunc = m.BrowsingPane.UnselectAll
+	m.globalHotkeys = windows.NewGlobalHotkeyManager()
 	m.Controller.OnShortcutsChanged = m.reloadMusicShortcuts
+	m.Controller.OnSettingsDialogOpen = func() {
+		m.globalHotkeysPaused = true
+		if m.globalHotkeys != nil {
+			m.globalHotkeys.Clear()
+		}
+	}
+	m.Controller.OnSettingsDialogClose = func() {
+		m.globalHotkeysPaused = false
+		m.reloadMusicShortcuts()
+	}
 	m.Controller.ToastProvider = m.ToastOverlay
 	app.OnRemoteMessage = func(header, text string) {
 		msg := text
@@ -572,6 +585,12 @@ func (m *MainWindow) addShortcuts() {
 			m.BrowsingPane.PageUp()
 		case fyne.KeyPageDown:
 			m.BrowsingPane.PageDown()
+		case fyne.KeySpace:
+			m.App.PlaybackManager.PlayPause()
+		case fyne.KeyLeft:
+			m.App.PlaybackManager.SeekBySeconds(-10)
+		case fyne.KeyRight:
+			m.App.PlaybackManager.SeekBySeconds(10)
 		}
 	})
 	m.Canvas().SetOnMouseBack(m.BrowsingPane.GoBack)
@@ -585,7 +604,40 @@ func (m *MainWindow) reloadMusicShortcuts() {
 	m.registeredMusicShortcuts = nil
 	m.singleKeyMusicActions = make(map[fyne.KeyName]func())
 
-	for _, action := range shortcuts.MusicShortcutActions {
+	var registeredGlobal map[int]bool
+	if m.globalHotkeys != nil {
+		if m.App.Config.Shortcuts.EnableGlobalShortcuts && !m.globalHotkeysPaused && windows.GlobalHotkeysSupported() {
+			var bindings []windows.HotkeyBinding
+			for i, action := range shortcuts.MusicShortcutActions {
+				spec := action.Get(&m.App.Config.Shortcuts)
+				key, mod, ok := shortcuts.ParseShortcut(spec)
+				if !ok {
+					continue
+				}
+				handler := m.musicActionHandler(action.ID)
+				if handler == nil {
+					continue
+				}
+				if winMod, vk, ok := shortcuts.ToWindowsHotkey(key, mod); ok {
+					bindings = append(bindings, windows.HotkeyBinding{
+						ID:        i + 1,
+						Modifiers: winMod,
+						VK:        vk,
+						Handler:   handler,
+					})
+				}
+			}
+			registeredGlobal = m.globalHotkeys.SetBindings(bindings)
+		} else {
+			m.globalHotkeys.Clear()
+		}
+	}
+
+	for i, action := range shortcuts.MusicShortcutActions {
+		// If registered as an OS-level global hotkey, skip duplicate in-app registration.
+		if registeredGlobal[i+1] {
+			continue
+		}
 		spec := action.Get(&m.App.Config.Shortcuts)
 		key, mod, ok := shortcuts.ParseShortcut(spec)
 		if !ok {
@@ -638,7 +690,9 @@ func (m *MainWindow) musicActionHandler(id shortcuts.MusicActionID) func() {
 			}
 		}
 	case shortcuts.ActionTogglePlayQueue:
-		return func() { m.Controller.TogglePopUpPlayQueue() }
+		return func() {
+			fyne.Do(func() { m.Controller.TogglePopUpPlayQueue() })
+		}
 	default:
 		return nil
 	}
@@ -682,6 +736,9 @@ func (m *MainWindow) SetContent(c fyne.CanvasObject) {
 }
 
 func (m *MainWindow) Quit() {
+	if m.globalHotkeys != nil {
+		m.globalHotkeys.Close()
+	}
 	m.SaveWindowSettings()
 	fyne.CurrentApp().Quit()
 }

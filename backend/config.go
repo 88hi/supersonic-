@@ -144,6 +144,7 @@ type LocalPlaybackConfig struct {
 	AutoEQProfilePath     string // Path to applied AutoEQ profile (e.g., "oratory1990/over-ear/Sennheiser HD 650")
 	AutoEQProfileName     string // Display name of applied profile (e.g., "Sennheiser HD 650")
 	PauseFade             bool
+	SyncSystemVolume      bool
 }
 
 type ScrobbleConfig struct {
@@ -177,36 +178,38 @@ type PeakMeterConfig struct {
 }
 
 type ShortcutsConfig struct {
-	PlayPause       string
-	Stop            string
-	NextTrack       string
-	PreviousTrack   string
-	SeekForward     string
-	SeekBackward    string
-	VolumeUp        string
-	VolumeDown      string
-	ToggleMute      string
-	ToggleShuffle   string
-	CycleRepeatMode string
-	ToggleFavorite  string
-	TogglePlayQueue string
+	EnableGlobalShortcuts bool
+	PlayPause             string
+	Stop                  string
+	NextTrack             string
+	PreviousTrack         string
+	SeekForward           string
+	SeekBackward          string
+	VolumeUp              string
+	VolumeDown            string
+	ToggleMute            string
+	ToggleShuffle         string
+	CycleRepeatMode       string
+	ToggleFavorite        string
+	TogglePlayQueue       string
 }
 
 func DefaultShortcutsConfig() ShortcutsConfig {
 	return ShortcutsConfig{
-		PlayPause:       "Space",
-		Stop:            "Ctrl+S",
-		NextTrack:       "Ctrl+Right",
-		PreviousTrack:   "Ctrl+Left",
-		SeekForward:     "Right",
-		SeekBackward:    "Left",
-		VolumeUp:        "Ctrl+Up",
-		VolumeDown:      "Ctrl+Down",
-		ToggleMute:      "M",
-		ToggleShuffle:   "Ctrl+Shift+S",
-		CycleRepeatMode: "Ctrl+Shift+R",
-		ToggleFavorite:  "Ctrl+L",
-		TogglePlayQueue: "Ctrl+Shift+Q",
+		EnableGlobalShortcuts: true,
+		PlayPause:             "Ctrl+Alt+P",
+		Stop:                  "Ctrl+Alt+S",
+		NextTrack:             "Ctrl+Alt+Right",
+		PreviousTrack:         "Ctrl+Alt+Left",
+		SeekForward:           "Ctrl+Shift+Right",
+		SeekBackward:          "Ctrl+Shift+Left",
+		VolumeUp:              "Ctrl+Alt+Up",
+		VolumeDown:            "Ctrl+Alt+Down",
+		ToggleMute:            "Ctrl+Alt+M",
+		ToggleShuffle:         "Ctrl+Alt+H",
+		CycleRepeatMode:       "Ctrl+Alt+R",
+		ToggleFavorite:        "Ctrl+Alt+L",
+		TogglePlayQueue:       "Ctrl+Alt+Q",
 	}
 }
 
@@ -316,6 +319,7 @@ func DefaultConfig(appVersionTag string) *Config {
 			EqualizerPreamp:       0,
 			GraphicEqualizerBands: make([]float64, 15),
 			PauseFade:             true,
+			SyncSystemVolume:      true,
 		},
 		Scrobbling: ScrobbleConfig{
 			Enabled:              true,

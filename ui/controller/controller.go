@@ -50,14 +50,16 @@ type Controller struct {
 	MainWindow fyne.Window
 
 	// dependencies injected from MainWindow
-	NavHandler          NavigationHandler
-	CurPageFunc         CurPageFunc
-	ReloadFunc          func()
-	RefreshPageFunc     func()
-	SelectAllPageFunc   func()
-	UnselectAllPageFunc func()
-	OnShortcutsChanged  func()
-	ToastProvider       ToastProvider
+	NavHandler            NavigationHandler
+	CurPageFunc           CurPageFunc
+	ReloadFunc            func()
+	RefreshPageFunc       func()
+	SelectAllPageFunc     func()
+	UnselectAllPageFunc   func()
+	OnShortcutsChanged    func()
+	OnSettingsDialogOpen  func()
+	OnSettingsDialogClose func()
+	ToastProvider         ToastProvider
 
 	popUpQueue         *widget.PopUp
 	popUpQueueList     *widgets.PlayQueueList
@@ -388,10 +390,16 @@ func (c *Controller) ShowSettingsDialog(themeUpdateCallbk func(), themeFiles map
 	dlg.OnRemoteControlSettingChanged = func() {
 		c.App.SetRemoteControlEnabled(c.App.Config.Application.EnableRemoteControl)
 	}
+	dlg.OnSyncSystemVolumeSettingChanged = func() {
+		c.App.SetSyncSystemVolume(c.App.Config.LocalPlayback.SyncSystemVolume)
+	}
 	dlg.OnShortcutsChanged = func() {
 		if c.OnShortcutsChanged != nil {
 			c.OnShortcutsChanged()
 		}
+	}
+	if c.OnSettingsDialogOpen != nil {
+		c.OnSettingsDialogOpen()
 	}
 	pop := widget.NewModalPopUp(container.NewPadded(dlg), c.MainWindow.Canvas())
 	fynetooltip.AddPopUpToolTipLayer(pop)
@@ -400,6 +408,9 @@ func (c *Controller) ShowSettingsDialog(themeUpdateCallbk func(), themeFiles map
 		fynetooltip.DestroyPopUpToolTipLayer(pop)
 		c.doModalClosed()
 		c.App.SaveConfigFile()
+		if c.OnSettingsDialogClose != nil {
+			c.OnSettingsDialogClose()
+		}
 	}
 	c.ClosePopUpOnEscape(pop)
 	c.haveModal = true
