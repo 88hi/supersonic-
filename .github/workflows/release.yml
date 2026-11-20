@@ -34,10 +34,10 @@ jobs:
           go-version: 'stable'
       - name: Download mpv dev & dll
         run: |
-          wget -q https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260610/mpv-dev-x86_64-20260610-git-304426c.7z
-          7z x -y mpv-dev-x86_64-20260610-git-304426c.7z
+          wget -q https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20261111/mpv-dev-x86_64-20261111-git-bcde6b93cc.7z
+          7z x -y mpv-dev-x86_64-20261111-git-bcde6b93cc.7z
           cp -r include/mpv /ucrt64/include/
-          cp libmpv.dll.a /ucrt64/lib/
+          find . -maxdepth 2 -name "libmpv.dll.a" -exec cp {} /ucrt64/lib/ \;
           cp libmpv-2.dll /ucrt64/bin/
       - name: Run tests
         run: go test -tags migrated_fynedo ./backend/... ./ui/shortcuts/...
