@@ -58,6 +58,11 @@ type PlaybackManager struct {
 	radioStationName string
 	radioIcyTitle    string
 	radioIcyArtist   string
+
+	// mute tracking for shortcuts and remote control
+	muteMu        sync.Mutex
+	muted         bool
+	preMuteVolume int
 }
 
 type RemotePlaybackDevice struct {
@@ -709,7 +714,49 @@ func (p *PlaybackManager) PlaybackStatus() PlaybackStatus {
 }
 
 func (p *PlaybackManager) SetVolume(vol int) {
+	vol = clamp(vol, 0, 100)
+	p.muteMu.Lock()
+	if vol > 0 {
+		p.muted = false
+		p.preMuteVolume = vol
+	}
+	p.muteMu.Unlock()
 	p.cmdQueue.SetVolume(vol)
+}
+
+func (p *PlaybackManager) AdjustVolume(delta int) {
+	p.SetVolume(p.Volume() + delta)
+}
+
+func (p *PlaybackManager) IsMuted() bool {
+	p.muteMu.Lock()
+	defer p.muteMu.Unlock()
+	return p.muted || p.Volume() == 0
+}
+
+func (p *PlaybackManager) SetMuted(muted bool) {
+	p.muteMu.Lock()
+	if muted {
+		cur := p.Volume()
+		if cur > 0 {
+			p.preMuteVolume = cur
+		}
+		p.muted = true
+		p.muteMu.Unlock()
+		p.cmdQueue.SetVolume(0)
+		return
+	}
+	restore := p.preMuteVolume
+	if restore <= 0 {
+		restore = 50
+	}
+	p.muted = false
+	p.muteMu.Unlock()
+	p.cmdQueue.SetVolume(restore)
+}
+
+func (p *PlaybackManager) ToggleMute() {
+	p.SetMuted(!p.IsMuted())
 }
 
 func (p *PlaybackManager) SetAutoplay(autoplay bool) {

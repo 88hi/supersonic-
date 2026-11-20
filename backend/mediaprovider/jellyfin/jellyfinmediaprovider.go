@@ -21,6 +21,7 @@ const (
 
 type JellyfinServer struct {
 	jellyfin.Client
+	sessionCapture *sessionCaptureTransport
 }
 
 func (j *JellyfinServer) Login(user, pass string) mediaprovider.LoginResponse {
@@ -35,13 +36,14 @@ func (j *JellyfinServer) Login(user, pass string) mediaprovider.LoginResponse {
 }
 
 func (j *JellyfinServer) MediaProvider() mediaprovider.MediaProvider {
-	return newJellyfinMediaProvider(&j.Client)
+	return newJellyfinMediaProvider(&j.Client, j.sessionCapture)
 }
 
 var _ mediaprovider.MediaProvider = (*JellyfinMediaProvider)(nil)
 
 type JellyfinMediaProvider struct {
 	client          *jellyfin.Client
+	sessionCapture  *sessionCaptureTransport
 	prefetchCoverCB func(coverArtID string)
 
 	currentLibraryID string
@@ -50,10 +52,11 @@ type JellyfinMediaProvider struct {
 	genresCachedAt int64 // unix
 }
 
-func newJellyfinMediaProvider(cli *jellyfin.Client) mediaprovider.MediaProvider {
+func newJellyfinMediaProvider(cli *jellyfin.Client, sc *sessionCaptureTransport) mediaprovider.MediaProvider {
 	return &JellyfinMediaProvider{
-		client:       cli,
-		genresCached: make([]*mediaprovider.Genre, 0),
+		client:         cli,
+		sessionCapture: sc,
+		genresCached:   make([]*mediaprovider.Genre, 0),
 	}
 }
 

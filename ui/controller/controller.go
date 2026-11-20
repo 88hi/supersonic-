@@ -56,6 +56,7 @@ type Controller struct {
 	RefreshPageFunc     func()
 	SelectAllPageFunc   func()
 	UnselectAllPageFunc func()
+	OnShortcutsChanged  func()
 	ToastProvider       ToastProvider
 
 	popUpQueue         *widget.PopUp
@@ -187,6 +188,14 @@ func (m *Controller) ShowCastMenu(onPendingPlayerChange func()) {
 		canvasSize.Width-pop.MinSize().Width-10,
 		canvasSize.Height-pop.MinSize().Height-100,
 	))
+}
+
+func (m *Controller) TogglePopUpPlayQueue() {
+	if m.popUpQueue != nil && m.popUpQueue.Visible() {
+		m.popUpQueue.Hide()
+		return
+	}
+	m.ShowPopUpPlayQueue()
 }
 
 func (m *Controller) ShowPopUpPlayQueue() {
@@ -376,6 +385,14 @@ func (c *Controller) ShowSettingsDialog(themeUpdateCallbk func(), themeFiles map
 	}
 	dlg.OnPageNeedsRefresh = c.RefreshPageFunc
 	dlg.OnClearCaches = func() { go c.App.ClearCaches() }
+	dlg.OnRemoteControlSettingChanged = func() {
+		c.App.SetRemoteControlEnabled(c.App.Config.Application.EnableRemoteControl)
+	}
+	dlg.OnShortcutsChanged = func() {
+		if c.OnShortcutsChanged != nil {
+			c.OnShortcutsChanged()
+		}
+	}
 	pop := widget.NewModalPopUp(container.NewPadded(dlg), c.MainWindow.Canvas())
 	fynetooltip.AddPopUpToolTipLayer(pop)
 	dlg.OnDismiss = func() {

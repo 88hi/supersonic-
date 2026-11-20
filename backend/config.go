@@ -58,6 +58,7 @@ type AppConfig struct {
 	EnableAutoUpdateChecker     bool
 	RequestTimeoutSeconds       int
 	EnableOSMediaPlayerAPIs     bool
+	EnableRemoteControl         bool
 	ShowSidebar                 bool
 	SidebarWidthFraction        float64
 	SidebarTab                  string
@@ -136,7 +137,7 @@ type LocalPlaybackConfig struct {
 	InMemoryCacheSizeMB   int
 	Volume                int
 	EqualizerEnabled      bool
-	EqualizerType         string    // "ISO10Band" or "ISO15Band"
+	EqualizerType         string // "ISO10Band" or "ISO15Band"
 	EqualizerPreamp       float64
 	GraphicEqualizerBands []float64
 	ActiveEQPresetName    string // Name of currently selected EQ preset
@@ -175,6 +176,40 @@ type PeakMeterConfig struct {
 	WindowWidth  int
 }
 
+type ShortcutsConfig struct {
+	PlayPause       string
+	Stop            string
+	NextTrack       string
+	PreviousTrack   string
+	SeekForward     string
+	SeekBackward    string
+	VolumeUp        string
+	VolumeDown      string
+	ToggleMute      string
+	ToggleShuffle   string
+	CycleRepeatMode string
+	ToggleFavorite  string
+	TogglePlayQueue string
+}
+
+func DefaultShortcutsConfig() ShortcutsConfig {
+	return ShortcutsConfig{
+		PlayPause:       "Space",
+		Stop:            "Ctrl+S",
+		NextTrack:       "Ctrl+Right",
+		PreviousTrack:   "Ctrl+Left",
+		SeekForward:     "Right",
+		SeekBackward:    "Left",
+		VolumeUp:        "Ctrl+Up",
+		VolumeDown:      "Ctrl+Down",
+		ToggleMute:      "M",
+		ToggleShuffle:   "Ctrl+Shift+S",
+		CycleRepeatMode: "Ctrl+Shift+R",
+		ToggleFavorite:  "Ctrl+L",
+		TogglePlayQueue: "Ctrl+Shift+Q",
+	}
+}
+
 type Config struct {
 	Application      AppConfig
 	Servers          []*ServerConfig
@@ -195,6 +230,7 @@ type Config struct {
 	Transcoding      TranscodingConfig
 	Theme            ThemeConfig
 	PeakMeter        PeakMeterConfig
+	Shortcuts        ShortcutsConfig
 }
 
 var SupportedStartupPages = []string{"Albums", "Favorites", "Playlists", "Artists", "All Tracks"}
@@ -223,6 +259,7 @@ func DefaultConfig(appVersionTag string) *Config {
 			EnableAutoUpdateChecker:            true,
 			RequestTimeoutSeconds:              15,
 			EnableOSMediaPlayerAPIs:            true,
+			EnableRemoteControl:                true,
 			SidebarWidthFraction:               0.8,
 			PreventScreensaverOnNowPlayingPage: false,
 		},
@@ -304,6 +341,7 @@ func DefaultConfig(appVersionTag string) *Config {
 			WindowWidth:  375,
 			WindowHeight: 100,
 		},
+		Shortcuts: DefaultShortcutsConfig(),
 	}
 }
 

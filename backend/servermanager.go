@@ -195,9 +195,11 @@ func (s *ServerManager) connect(connection ServerConnection, password string) (m
 			return nil, err
 		}
 		s.checkSetInsecureSkipVerify(connection.SkipSSLVerify, client.HTTPClient)
-		cli = &jellyfinMP.JellyfinServer{
+		jfCli := &jellyfinMP.JellyfinServer{
 			Client: *client,
 		}
+		jfCli.AttachSessionCapture()
+		cli = jfCli
 
 		if connection.AltHostname != "" {
 			altClient, err := jellyfin.NewClient(connection.AltHostname, res.AppName, res.AppVersion, jellyfin.WithTimeout(timeout))
@@ -206,9 +208,11 @@ func (s *ServerManager) connect(connection ServerConnection, password string) (m
 				return nil, err
 			}
 			s.checkSetInsecureSkipVerify(connection.SkipSSLVerify, altClient.HTTPClient)
-			altCli = &jellyfinMP.JellyfinServer{
+			jfAltCli := &jellyfinMP.JellyfinServer{
 				Client: *altClient,
 			}
+			jfAltCli.AttachSessionCapture()
+			altCli = jfAltCli
 		}
 	} else {
 		ua := fmt.Sprintf("%s/%s", s.appName, s.appVersion)

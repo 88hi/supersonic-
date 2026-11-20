@@ -58,12 +58,14 @@ type App struct {
 	UpdateChecker   UpdateChecker
 	MPRISHandler    *MPRISHandler
 	WinSMTC         *windows.SMTC
+	JellyfinRemote  *JellyfinRemoteController
 	ipcServer       ipc.IPCServer
 
 	// UI callbacks to be set in main
-	OnReactivate  func()
-	OnExit        func()
-	OnReloadTheme func()
+	OnReactivate    func()
+	OnExit          func()
+	OnReloadTheme   func()
+	OnRemoteMessage func(header, text string)
 
 	appName        string
 	displayAppName string
@@ -258,10 +260,39 @@ func StartupApp(appName, displayAppName, appVersion, appVersionTag, latestReleas
 		// Windows SMTC is initialized from main once we have a window HWND.
 	}
 
+	// Jellyfin remote control / cast receiver
+	a.JellyfinRemote = NewJellyfinRemoteController(a.PlaybackManager, a.ServerManager)
+	a.JellyfinRemote.OnRemoteMessage = func(header, text string) {
+		if a.OnRemoteMessage != nil {
+			a.OnRemoteMessage(header, text)
+		}
+	}
+	a.ServerManager.OnServerConnected(func(_ *ServerConfig) {
+		if a.Config.Application.EnableRemoteControl {
+			a.JellyfinRemote.Start(a.bgrndCtx)
+		}
+	})
+	a.ServerManager.OnLogout(func() {
+		a.JellyfinRemote.Stop()
+	})
+
 	a.startConfigWriter(a.bgrndCtx)
 
 	appInstance = a
 	return a, nil
+}
+
+// SetRemoteControlEnabled enables or disables remote control (Jellyfin Cast receiver) at runtime.
+func (a *App) SetRemoteControlEnabled(enabled bool) {
+	a.Config.Application.EnableRemoteControl = enabled
+	if a.JellyfinRemote == nil {
+		return
+	}
+	if enabled {
+		a.JellyfinRemote.Start(a.bgrndCtx)
+	} else {
+		a.JellyfinRemote.Stop()
+	}
 }
 
 func AppInstance() *App {
@@ -604,6 +635,9 @@ func (a *App) Shutdown() {
 	}
 	if a.WinSMTC != nil {
 		a.WinSMTC.Shutdown()
+	}
+	if a.JellyfinRemote != nil {
+		a.JellyfinRemote.Stop()
 	}
 	a.PlaybackManager.DisableCallbacks()
 	a.PlaybackManager.Shutdown() // will trigger scrobble check

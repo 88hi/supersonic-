@@ -52,6 +52,9 @@ type MainWindow struct {
 	// updated when changing servers or libraries
 	librarySubmenu *fyne.Menu
 
+	registeredMusicShortcuts []fyne.Shortcut
+	singleKeyMusicActions    map[fyne.KeyName]func()
+
 	isScreensaverDisabled bool
 }
 
@@ -93,7 +96,19 @@ func NewMainWindow(fyneApp fyne.App, appName, displayAppName, appVersion string,
 	}
 	m.Controller.SelectAllPageFunc = m.BrowsingPane.SelectAll
 	m.Controller.UnselectAllPageFunc = m.BrowsingPane.UnselectAll
+	m.Controller.OnShortcutsChanged = m.reloadMusicShortcuts
 	m.Controller.ToastProvider = m.ToastOverlay
+	app.OnRemoteMessage = func(header, text string) {
+		msg := text
+		if header != "" && text != "" {
+			msg = header + ": " + text
+		} else if header != "" {
+			msg = header
+		}
+		if msg != "" {
+			fyne.Do(func() { m.ToastOverlay.ShowSuccessToast(msg) })
+		}
+	}
 
 	if runtime.GOOS == "darwin" {
 		// Fyne will extract out an "About" menu item and
@@ -537,7 +552,17 @@ func (m *MainWindow) addShortcuts() {
 		}(i))
 	}
 
+	m.reloadMusicShortcuts()
+
 	m.Canvas().SetOnTypedKey(func(e *fyne.KeyEvent) {
+		if e.Name == fyne.KeyEscape {
+			m.Controller.CloseEscapablePopUp()
+			return
+		}
+		if fn, ok := m.singleKeyMusicActions[e.Name]; ok {
+			fn()
+			return
+		}
 		switch e.Name {
 		case fyne.KeyUp:
 			m.BrowsingPane.ScrollUp()
@@ -547,18 +572,76 @@ func (m *MainWindow) addShortcuts() {
 			m.BrowsingPane.PageUp()
 		case fyne.KeyPageDown:
 			m.BrowsingPane.PageDown()
-		case fyne.KeyEscape:
-			m.Controller.CloseEscapablePopUp()
-		case fyne.KeySpace:
-			m.App.PlaybackManager.PlayPause()
-		case fyne.KeyLeft:
-			m.App.PlaybackManager.SeekBySeconds(-10)
-		case fyne.KeyRight:
-			m.App.PlaybackManager.SeekBySeconds(10)
 		}
 	})
 	m.Canvas().SetOnMouseBack(m.BrowsingPane.GoBack)
 	m.Canvas().SetOnMouseForward(m.BrowsingPane.GoForward)
+}
+
+func (m *MainWindow) reloadMusicShortcuts() {
+	for _, s := range m.registeredMusicShortcuts {
+		m.Canvas().RemoveShortcut(s)
+	}
+	m.registeredMusicShortcuts = nil
+	m.singleKeyMusicActions = make(map[fyne.KeyName]func())
+
+	for _, action := range shortcuts.MusicShortcutActions {
+		spec := action.Get(&m.App.Config.Shortcuts)
+		key, mod, ok := shortcuts.ParseShortcut(spec)
+		if !ok {
+			continue
+		}
+		handler := m.musicActionHandler(action.ID)
+		if handler == nil {
+			continue
+		}
+		if mod == 0 {
+			m.singleKeyMusicActions[key] = handler
+		} else {
+			cs := &desktop.CustomShortcut{KeyName: key, Modifier: mod}
+			m.Canvas().AddShortcut(cs, func(_ fyne.Shortcut) {
+				handler()
+			})
+			m.registeredMusicShortcuts = append(m.registeredMusicShortcuts, cs)
+		}
+	}
+}
+
+func (m *MainWindow) musicActionHandler(id shortcuts.MusicActionID) func() {
+	switch id {
+	case shortcuts.ActionPlayPause:
+		return func() { m.App.PlaybackManager.PlayPause() }
+	case shortcuts.ActionStop:
+		return func() { m.App.PlaybackManager.Stop() }
+	case shortcuts.ActionNextTrack:
+		return func() { m.App.PlaybackManager.SeekNext() }
+	case shortcuts.ActionPreviousTrack:
+		return func() { m.App.PlaybackManager.SeekBackOrPrevious() }
+	case shortcuts.ActionSeekForward:
+		return func() { m.App.PlaybackManager.SeekBySeconds(10) }
+	case shortcuts.ActionSeekBackward:
+		return func() { m.App.PlaybackManager.SeekBySeconds(-10) }
+	case shortcuts.ActionVolumeUp:
+		return func() { m.App.PlaybackManager.AdjustVolume(5) }
+	case shortcuts.ActionVolumeDown:
+		return func() { m.App.PlaybackManager.AdjustVolume(-5) }
+	case shortcuts.ActionToggleMute:
+		return func() { m.App.PlaybackManager.ToggleMute() }
+	case shortcuts.ActionToggleShuffle:
+		return func() { m.App.PlaybackManager.SetShuffle(!m.App.PlaybackManager.IsShuffle()) }
+	case shortcuts.ActionCycleRepeatMode:
+		return func() { m.App.PlaybackManager.SetNextLoopMode() }
+	case shortcuts.ActionToggleFavorite:
+		return func() {
+			if tr, ok := m.App.PlaybackManager.NowPlaying().(*mediaprovider.Track); ok {
+				m.Controller.SetTrackFavorites([]string{tr.ID}, !tr.Favorite)
+			}
+		}
+	case shortcuts.ActionTogglePlayQueue:
+		return func() { m.Controller.TogglePopUpPlayQueue() }
+	default:
+		return nil
+	}
 }
 
 func (m *MainWindow) showSettingsDialog() {

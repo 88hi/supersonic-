@@ -14,6 +14,7 @@ import (
 	"github.com/supersonic-app/supersonic/backend"
 	"github.com/supersonic-app/supersonic/backend/player/mpv"
 	"github.com/supersonic-app/supersonic/res"
+	"github.com/supersonic-app/supersonic/ui/shortcuts"
 	myTheme "github.com/supersonic-app/supersonic/ui/theme"
 	"github.com/supersonic-app/supersonic/ui/util"
 	"github.com/supersonic-app/supersonic/ui/widgets"
@@ -41,6 +42,8 @@ type SettingsDialog struct {
 	OnEqualizerSettingsChanged     func()
 	OnPageNeedsRefresh             func()
 	OnClearCaches                  func()
+	OnRemoteControlSettingChanged  func()
+	OnShortcutsChanged             func()
 
 	config          *backend.Config
 	audioDevices    []mpv.AudioDevice
@@ -101,6 +104,7 @@ func NewSettingsDialog(
 			s.createAppearanceTab(window),
 			s.createPlaybackTab(isLocalPlayer, isReplayGainPlayer),
 			s.createEqualizerTab(equalizerBands),
+			s.createShortcutsTab(),
 			s.createAdvancedTab(),
 		)
 	} else {
@@ -108,6 +112,7 @@ func NewSettingsDialog(
 			s.createGeneralTab(canSavePlayQueue),
 			s.createAppearanceTab(window),
 			s.createPlaybackTab(isLocalPlayer, isReplayGainPlayer),
+			s.createShortcutsTab(),
 			s.createAdvancedTab(),
 		)
 	}
@@ -452,6 +457,14 @@ func (s *SettingsDialog) createPlaybackTab(isLocalPlayer, isReplayGainPlayer boo
 		preampGain.Disable()
 	}
 
+	remoteControl := widget.NewCheck(lang.L("Allow remote control (Jellyfin Cast)"), func(b bool) {
+		s.config.Application.EnableRemoteControl = b
+		if s.OnRemoteControlSettingChanged != nil {
+			s.OnRemoteControlSettingChanged()
+		}
+	})
+	remoteControl.Checked = s.config.Application.EnableRemoteControl
+
 	return container.NewTabItem(lang.L("Playback"), container.NewVBox(
 
 		container.New(&layout.CustomPaddedLayout{TopPadding: 5},
@@ -460,6 +473,7 @@ func (s *SettingsDialog) createPlaybackTab(isLocalPlayer, isReplayGainPlayer boo
 				layout.NewSpacer(), audioExclusive,
 			)),
 		pauseFade,
+		remoteControl,
 		s.newSectionSeparator(),
 		disableTranscode,
 		container.NewHBox(transcode, transcodeCodec, transcodeBitRate),
@@ -795,6 +809,70 @@ func (s *SettingsDialog) createAppearanceTab(window fyne.Window) *container.TabI
 			widget.NewLabel(lang.L("Bold font")), container.NewBorder(nil, nil, nil, boldFontBrowse, boldFontEntry),
 		),
 	))
+}
+
+func (s *SettingsDialog) createShortcutsTab() *container.TabItem {
+	rows := container.NewVBox()
+	recorders := make([]*widgets.ShortcutRecorder, len(shortcuts.MusicShortcutActions))
+
+	notifyChanged := func() {
+		if s.OnShortcutsChanged != nil {
+			s.OnShortcutsChanged()
+		}
+	}
+
+	for i, act := range shortcuts.MusicShortcutActions {
+		action := act
+		cur := action.Get(&s.config.Shortcuts)
+		rec := widgets.NewShortcutRecorder(cur, func(spec string) {
+			action.Set(&s.config.Shortcuts, spec)
+			notifyChanged()
+		})
+		recorders[i] = rec
+
+		clearBtn := widget.NewButtonWithIcon("", theme.ContentClearIcon(), func() {
+			action.Set(&s.config.Shortcuts, "")
+			rec.SetValue("")
+			notifyChanged()
+		})
+		clearBtn.Importance = widget.LowImportance
+
+		resetBtn := widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), func() {
+			action.Set(&s.config.Shortcuts, action.Default)
+			rec.SetValue(action.Default)
+			notifyChanged()
+		})
+		resetBtn.Importance = widget.LowImportance
+
+		row := container.NewBorder(
+			nil, nil,
+			widget.NewLabel(lang.L(action.LabelKey)),
+			container.NewHBox(rec, clearBtn, resetBtn),
+		)
+		rows.Add(row)
+	}
+
+	resetAllBtn := widget.NewButton(lang.L("Reset all to defaults"), func() {
+		s.config.Shortcuts = backend.DefaultShortcutsConfig()
+		for i, action := range shortcuts.MusicShortcutActions {
+			recorders[i].SetValue(action.Get(&s.config.Shortcuts))
+		}
+		notifyChanged()
+	})
+
+	hint := widget.NewLabel(lang.L("Click a shortcut button and press the desired key combination (Esc to cancel)."))
+	hint.Wrapping = fyne.TextWrapWord
+
+	scroll := container.NewVScroll(container.NewPadded(rows))
+	scroll.SetMinSize(fyne.NewSize(460, 320))
+
+	content := container.NewBorder(
+		hint,
+		container.NewHBox(layout.NewSpacer(), resetAllBtn),
+		nil, nil,
+		scroll,
+	)
+	return container.NewTabItem(lang.L("Shortcuts"), content)
 }
 
 func (s *SettingsDialog) createAdvancedTab() *container.TabItem {
